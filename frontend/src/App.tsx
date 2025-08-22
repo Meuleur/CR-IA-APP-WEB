@@ -7,13 +7,14 @@ import ProtectedRoute from "./routes/ProtectedRoute";
 function LoginWrapper() {
   const setToken = useAuth((s) => s.setToken);
   const navigate = useNavigate();
+  const setEmail = useAuth((s) => s.setEmail); // 👈 récupère bien l’action
 
   return (
     <LoginPage
-      title="Connexion"
-      onSuccess={(token) => {
-        setToken(token);         // 1) on garde le token en mémoire
-        navigate("/dashboard");  // 2) redirection immédiate
+      onSuccess={(token, email) => {
+        setToken(token);
+        setEmail(email);
+        navigate("/dashboard");
       }}
     />
   );
