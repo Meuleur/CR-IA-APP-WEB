@@ -11,9 +11,37 @@ from pydantic import BaseModel
 from docx import Document
 from docx.shared import Pt
 from docx.enum.text import WD_BREAK
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, EmailStr
+from ..services.docx import render_report_docx
+from ..services.mailer import send_mail_with_attachment
+import tempfile
 
 router = APIRouter()
 
+
+class ReportEmailRequest(BaseModel):
+    report_md: str
+    author: str
+    report_date: str
+
+@router.post("/report-email")
+async def report_email(payload: ReportEmailRequest):
+    try:
+        # 1. Génère un .docx temporaire
+        tmp_path = tempfile.mktemp(suffix=".docx")
+        render_report_docx(payload.report_md, payload.author, payload.report_date, tmp_path)
+
+        # 2. Envoie par mail
+        await send_mail_with_attachment(
+            to=payload.author,  # <-- email utilisateur
+            subject=f"Compte rendu du {payload.report_date}",
+            body="Veuillez trouver ci-joint le compte rendu généré automatiquement.",
+            file_path=tmp_path,
+        )
+        return JSONResponse({"ok": True, "message": "Email envoyé ✅"})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 # ---------- Whisper local (déjà configuré précédemment) ----------
 _model = None
 def get_model():
