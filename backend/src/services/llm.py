@@ -4,35 +4,50 @@ from fastapi import HTTPException
 
 PROVIDER = os.getenv("LLM_PROVIDER", "ollama")
 HOST = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
-
-# Par défaut, on prend le tag que tu as déjà tiré.
 MODEL = os.getenv("LLM_MODEL", "gemma2:latest")
 
-# 🔧 Réglages pour maximiser la fidélité et limiter les hallucinations
 LLM_OPTIONS = {
-    "temperature": 0.2,       # sorties plus factuelles
+    "temperature": 0.2,
     "top_p": 0.9,
     "repeat_penalty": 1.1,
-    "num_ctx": 8192,          # plus de contexte visible par le modèle
-    # "num_predict": 1024,    # optionnel: plafonne la longueur de sortie
+    "num_ctx": 8192,
 }
 
-SYSTEM = (
-    "Tu es un rédacteur de comptes rendus techniques en français. "
-    "Objectif: EXHAUSTIVITÉ, ZÉRO PERTE D'INFO, AUCUNE INVENTION.\n"
-    "- Conserve TOUTES les informations opérationnelles: horaires, lieux, équipements, "
-    "mesures, seuils/consignes, anomalies, décisions, actions, personnes/équipes, suivis.\n"
-    "- Conserve les UNITÉS, les VALEURS CHIFFRÉES, les NOMS d’équipements (ex: P_RRI_03), "
-    "et les observations exactes (ex: bruits, doses, températures).\n"
-    "- Si une rubrique n’a pas d’information dans le verbatim, LAISSE-LA VIDE (n’invente pas).\n"
-    "- Formate la sortie STRICTEMENT en Markdown, sections ci‑dessous, sans autre texte.\n"
-)
+def build_system(author: str, job_title: str, site: str) -> str:
+    """
+    Construit un system prompt contextualisé (mais SANS jamais autoriser l'invention).
+    """
+    author_s = author.strip() or "—"
+    job_s = job_title.strip() or "—"
+    site_s = site.strip() or "—"
 
-TEMPLATE = """Reformate le texte suivant SANS RÉSUMER NI OMETTRE d’informations techniques.
+    return (
+        "Tu es un rédacteur de comptes rendus techniques en français.\n"
+        "Objectif : EXHAUSTIVITÉ, ZÉRO PERTE D'INFO, AUCUNE INVENTION.\n"
+        "- Conserve TOUTES les informations opérationnelles : horaires, lieux, équipements, "
+        "mesures, seuils/consignes, anomalies, décisions, actions, personnes/équipes, suivis.\n"
+        "- Conserve les UNITÉS, les VALEURS CHIFFRÉES, les NOMS d’équipements (ex: P_RRI_03), "
+        "et les observations exactes (ex: bruits, doses, températures).\n"
+        "- Si une rubrique n’a pas d’information dans le verbatim, LAISSE-LA VIDE (n’invente pas).\n"
+        "- Tu écris pour {author} (poste : {job}, site : {site}). Cela influence UNIQUEMENT la clarté et la mise en forme, "
+        "JAMAIS le fond ni les faits.\n"
+        "- Formate la sortie STRICTEMENT en Markdown.\n"
+    ).format(author=author_s, job=job_s, site=site_s)
+
+TEMPLATE = """\
+Reformate le texte suivant SANS RÉSUMER NI OMETTRE d’informations techniques.
 Tu dois réécrire les phrases pour les rendre claires, mais sans perdre de détails.
-Respecte EXACTEMENT ce gabarit Markdown (utilise des puces concises et actionnables) :
+Ne déduis rien qui ne soit pas dans le verbatim.
+
+Respecte EXACTEMENT ce gabarit Markdown :
 
 # Compte rendu
+
+**Auteur :** {author}  
+**Poste :** {job_title}  
+**Site :** {site}  
+**Date :** {report_date}
+
 ## Contexte
 - ...
 
@@ -43,7 +58,7 @@ Respecte EXACTEMENT ce gabarit Markdown (utilise des puces concises et actionnab
 - ...
 
 ## Actions (qui / quoi / deadline)
-- [ ] Responsable: ..., Action: ..., Deadline: JJ/MM/AAAA (ou horizon relatif si aucune date fournie)
+- [ ] Responsable: ..., Action: ..., Deadline: JJ/MM/AAAA
 
 ## Risques / Points ouverts
 - ...
@@ -57,20 +72,47 @@ Contraintes de sortie :
 - Évite les phrases vagues : chaque puce doit contenir un FAIT précis ou une ACTION.
 
 Texte source (verbatim) :
-\"\"\"{transcript}\"\"\""""
+\"\"\"{transcript}\"\"\"\
+"""
 
-async def generate_report_from_transcript(transcript: str) -> str:
+async def generate_report_from_transcript(
+    transcript: str,
+    *,
+    author: str = "",
+    author_email: str = "",
+    job_title: str = "",
+    site: str = "",
+    report_date: str = "",
+) -> str:
+    """
+    Génère un compte rendu personnalisé à partir d'un verbatim et de métadonnées.
+    Toutes les métadonnées sont facultatives : si absentes, elles s'affichent vides.
+    """
     if PROVIDER != "ollama":
         raise HTTPException(500, detail="LLM_PROVIDER non supporté")
 
-    messages = [
-        {"role": "system", "content": SYSTEM},
-        {"role": "user", "content": TEMPLATE.format(transcript=transcript)},
-    ]
+    # Fallbacks propres pour l'affichage
+    author = (author or author_email or "").strip() or "—"
+    job_title = (job_title or "").strip() or "—"
+    site = (site or "").strip() or "—"
+    report_date = (report_date or "").strip() or "—"
+
+    system = build_system(author=author, job_title=job_title, site=site)
+
+    user_prompt = TEMPLATE.format(
+        author=author,
+        job_title=job_title,
+        site=site,
+        report_date=report_date,
+        transcript=transcript,
+    )
 
     payload = {
         "model": MODEL,
-        "messages": messages,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user_prompt},
+        ],
         "stream": False,
         "options": LLM_OPTIONS,
     }

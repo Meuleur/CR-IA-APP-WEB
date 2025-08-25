@@ -83,7 +83,15 @@ async def transcribe(file: UploadFile = File(...)):
 # ---------- Nouveau: génération de compte rendu ----------
 class ReportIn(BaseModel):
     transcript: str
+    # 👇 métadonnées optionnelles (arrivent du Dashboard)
+    author: str | None = None
+    author_email: str | None = None
+    job_title: str | None = None
+    site: str | None = None
+    report_date: str | None = None  # "JJ/MM/AAAA"
 
+class ReportOut(BaseModel):
+    report_md: str
 class ReportOut(BaseModel):
     report_md: str
 
@@ -91,9 +99,16 @@ class ReportOut(BaseModel):
 async def report(payload: ReportIn):
     if not payload.transcript.strip():
         raise HTTPException(400, detail="Transcript vide")
-    md = await generate_report_from_transcript(payload.transcript)
-    return ReportOut(report_md=md)
 
+    md = await generate_report_from_transcript(
+        payload.transcript,
+        author=payload.author or "",
+        author_email=payload.author_email or "",
+        job_title=payload.job_title or "",
+        site=payload.site or "",
+        report_date=payload.report_date or "",
+    )
+    return ReportOut(report_md=md)
 # ---------- Nouveau: en une seule requête ----------
 class TranscribeReportOut(BaseModel):
     text: str
@@ -111,7 +126,10 @@ async def transcribe_and_report(file: UploadFile = File(...)):
 class ReportDocxIn(BaseModel):
     report_md: str
     author: str
-    report_date: str  # ex: "22/08/2025"
+    author_email: EmailStr | None = None  # pas utilisé pour le download, mais utile si tu veux l’afficher
+    report_date: str
+    job_title: str | None = None
+    site: str | None = None
 
 def _add_md_to_docx(doc: Document, md: str):
     """
