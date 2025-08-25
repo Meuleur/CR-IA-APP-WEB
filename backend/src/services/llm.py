@@ -4,14 +4,33 @@ from fastapi import HTTPException
 
 PROVIDER = os.getenv("LLM_PROVIDER", "ollama")
 HOST = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
-MODEL = os.getenv("LLM_MODEL", "mistral:instruct")  # <- par défaut: mistral:instruct
+
+# Par défaut, on prend le tag que tu as déjà tiré.
+MODEL = os.getenv("LLM_MODEL", "gemma2:latest")
+
+# 🔧 Réglages pour maximiser la fidélité et limiter les hallucinations
+LLM_OPTIONS = {
+    "temperature": 0.2,       # sorties plus factuelles
+    "top_p": 0.9,
+    "repeat_penalty": 1.1,
+    "num_ctx": 8192,          # plus de contexte visible par le modèle
+    # "num_predict": 1024,    # optionnel: plafonne la longueur de sortie
+}
 
 SYSTEM = (
-    "Tu rédiges des comptes rendus concis et actionnables en français, "
-    "sans inventer d'informations. Conserve toutes les informations techniques et opérationnelles. Tu dois être exhaustif : chaque donnée chiffrée, chaque anomalie et chaque décision doivent apparaître."
+    "Tu es un rédacteur de comptes rendus techniques en français. "
+    "Objectif: EXHAUSTIVITÉ, ZÉRO PERTE D'INFO, AUCUNE INVENTION.\n"
+    "- Conserve TOUTES les informations opérationnelles: horaires, lieux, équipements, "
+    "mesures, seuils/consignes, anomalies, décisions, actions, personnes/équipes, suivis.\n"
+    "- Conserve les UNITÉS, les VALEURS CHIFFRÉES, les NOMS d’équipements (ex: P_RRI_03), "
+    "et les observations exactes (ex: bruits, doses, températures).\n"
+    "- Si une rubrique n’a pas d’information dans le verbatim, LAISSE-LA VIDE (n’invente pas).\n"
+    "- Formate la sortie STRICTEMENT en Markdown, sections ci‑dessous, sans autre texte.\n"
 )
 
-TEMPLATE = """Transcris => Résume => Structure le compte rendu avec ce format Markdown :
+TEMPLATE = """Reformate le texte suivant SANS RÉSUMER NI OMETTRE d’informations techniques.
+Tu dois réécrire les phrases pour les rendre claires, mais sans perdre de détails.
+Respecte EXACTEMENT ce gabarit Markdown (utilise des puces concises et actionnables) :
 
 # Compte rendu
 ## Contexte
@@ -24,13 +43,18 @@ TEMPLATE = """Transcris => Résume => Structure le compte rendu avec ce format M
 - ...
 
 ## Actions (qui / quoi / deadline)
-- [ ] Responsable: ..., Action: ..., Deadline: ...
+- [ ] Responsable: ..., Action: ..., Deadline: JJ/MM/AAAA (ou horizon relatif si aucune date fournie)
 
 ## Risques / Points ouverts
 - ...
 
 ## Prochaines étapes
 - ...
+
+Contraintes de sortie :
+- Garde toutes les données (heures, valeurs, appareils, lieux, unités).
+- N’invente rien : si l’info n’existe pas, laisse la puce vide ou n’ajoute pas de ligne inutile.
+- Évite les phrases vagues : chaque puce doit contenir un FAIT précis ou une ACTION.
 
 Texte source (verbatim) :
 \"\"\"{transcript}\"\"\""""
@@ -48,7 +72,7 @@ async def generate_report_from_transcript(transcript: str) -> str:
         "model": MODEL,
         "messages": messages,
         "stream": False,
-        # "options": {"num_ctx": 4096},  # optionnel
+        "options": LLM_OPTIONS,
     }
 
     try:
@@ -56,7 +80,6 @@ async def generate_report_from_transcript(transcript: str) -> str:
             r = await client.post(f"{HOST}/api/chat", json=payload)
             r.raise_for_status()
             data = r.json()
-            # /api/chat renvoie { "message": { "content": "..."}, ... }
             return (data.get("message", {}).get("content") or "").strip()
     except httpx.ConnectError as e:
         raise HTTPException(503, detail=f"Ollama injoignable sur {HOST}. Lance 'ollama serve'. ({e})")
