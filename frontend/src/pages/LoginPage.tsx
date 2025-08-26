@@ -84,7 +84,7 @@ export default function LoginPage({ onSuccess, title = "Connexion" }: LoginPageP
       <div className="w-full max-w-md">
         <div className={`bg-white/90 backdrop-blur border border-slate-200 rounded-2xl shadow-xl p-8 transition-transform ${shake ? "animate-[wiggle_0.5s_ease-in-out]" : ""}`}>
           <h1 className="text-2xl md:text-3xl font-semibold tracking-tight text-slate-900 mb-2">{title}</h1>
-          <p className="text-slate-500 mb-6">Accède à ton espace et teste l'IA sans RAG ✨</p>
+          <p className="text-slate-500 mb-6">Prêt à tester votre partenaire pour la rédaction de vos comptes rendus ?</p>
 
           {error && (
             <div className="mb-4 rounded-lg border border-red-200 bg-red-50 text-red-700 px-3 py-2 text-sm">
@@ -179,7 +179,7 @@ export default function LoginPage({ onSuccess, title = "Connexion" }: LoginPageP
           </form>
 
           <p className="text-center text-xs text-slate-500 mt-6">
-            Les informations saisies seront disponibles dans le Dashboard (localStorage.profile).
+            Les informations saisies seront utilisées pour personnaliser votre compte rendu.
           </p>
         </div>
 
